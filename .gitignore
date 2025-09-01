@@ -1,0 +1,39 @@
+# Binaries for programs and plugins
+/bin/
+/build/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Test binary, built with `go test -c`
+*.test
+
+# Output of the go coverage tool
+coverage.out
+
+# Vendor directory
+/vendor/
+
+# Go workspace file
+go.work
+
+# Dependency directories
+pkg/
+
+# Misc
+.DS_Store
+*.log
+
+# Environment files
+.env
+
+# IDEs
+.vscode/
+/.idea/
+*.iml
+
+# Docker
+docker-compose.override.yml
+**/docker/mysql-init/*
