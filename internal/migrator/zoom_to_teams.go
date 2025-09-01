@@ -1,27 +1,31 @@
 package migrator
 
 import (
-	"errors"
 	"fmt"
-	"time"
 
-	"example.com/go-migrator/internal/models"
+	teamdest "example.com/go-migrator/internal/migrator/dest/teams"
+	zoomsrc "example.com/go-migrator/internal/migrator/source/zoom"
 )
 
-// Migrate performs a migration for the given task. This is a mock implementation
-// that simulates migrating Zoom chat messages to Teams.
-func Migrate(t *models.Task) error {
-	if t.Source != "zoom" || t.Target != "teams" {
-		return fmt.Errorf("no migrator for %s -> %s", t.Source, t.Target)
+// MigrateTask is a thin adapter used by the worker: it instantiates provider clients
+// from environment and runs the orchestrator.
+func MigrateTask(convID string, opts map[string]string) error {
+	src, err := zoomsrc.NewClientFromEnv()
+	if err != nil {
+		return fmt.Errorf("zoom client: %w", err)
 	}
-	// simulate doing work
-	time.Sleep(100 * time.Millisecond)
-
-	// simulate failure for certain payloads
-	if v, ok := t.Payload["conversation_id"]; ok && v == "fail-me" {
-		return errors.New("simulated migration failure")
+	dst, err := teamdest.NewClientFromEnv()
+	if err != nil {
+		return fmt.Errorf("teams client: %w", err)
 	}
-	// normally here you'd call Zoom APIs to fetch messages and then call Teams APIs
-	// to create messages; for this skeleton we just pretend it worked.
-	return nil
+	orchestrator := NewOrchestrator(src, dst)
+	teamName := opts["team_name"]
+	if teamName == "" {
+		teamName = fmt.Sprintf("Migrated-%s", convID)
+	}
+	channelName := opts["channel_name"]
+	if channelName == "" {
+		channelName = "general"
+	}
+	return orchestrator.Run(convID, teamName, channelName)
 }

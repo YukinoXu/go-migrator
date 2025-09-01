@@ -43,7 +43,7 @@ func main() {
 	wk := worker.NewWorker(st, qclient, 4)
 	wk.Start(ctx)
 
-	h := api.NewHandler(st)
+	h := api.NewHandler(st, qclient)
 	srv := &http.Server{
 		Addr:    ":8080",
 		Handler: h.Router(),

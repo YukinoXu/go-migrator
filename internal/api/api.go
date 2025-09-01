@@ -8,16 +8,20 @@ import (
 	"strings"
 
 	"example.com/go-migrator/internal/models"
+	"example.com/go-migrator/internal/queue"
 	"example.com/go-migrator/internal/store"
 )
 
 type Handler struct {
 	store store.Store
+	q     queue.Client
 	mux   *http.ServeMux
 }
 
-func NewHandler(s store.Store) *Handler {
-	h := &Handler{store: s, mux: http.NewServeMux()}
+// NewHandler creates an API handler. q may be nil; if provided, created task IDs
+// will be published to the queue.
+func NewHandler(s store.Store, q queue.Client) *Handler {
+	h := &Handler{store: s, q: q, mux: http.NewServeMux()}
 	h.routes()
 	return h
 }
@@ -47,6 +51,12 @@ func (h *Handler) tasks(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			http.Error(w, "create error", http.StatusInternalServerError)
 			return
+		}
+		// publish to queue if available
+		if h.q != nil {
+			if err := h.q.Publish(r.Context(), id); err != nil {
+				log.Printf("warning: failed to publish task %s to queue: %v", id, err)
+			}
 		}
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusAccepted)

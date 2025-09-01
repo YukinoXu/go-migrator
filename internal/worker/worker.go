@@ -68,8 +68,9 @@ func (w *Worker) process(id string) {
 	t.Status = models.StatusRunning
 	_ = w.store.UpdateTask(t)
 
-	// simulate execution
-	err = migrator.Migrate(t)
+	// execute migration via orchestrator adapter
+	convID := t.Payload["conversation_id"]
+	err = migrator.MigrateTask(convID, t.Payload)
 	if err != nil {
 		log.Printf("task %s failed: %v", id, err)
 		t.Status = models.StatusFailed
