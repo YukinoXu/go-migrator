@@ -7,9 +7,9 @@ import (
 	"net/http"
 	"strings"
 
-	"example.com/go-migrator/internal/models"
 	"example.com/go-migrator/internal/queue"
 	"example.com/go-migrator/internal/store"
+	models "example.com/go-migrator/internal/task"
 )
 
 type Handler struct {

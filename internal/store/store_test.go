@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"example.com/go-migrator/internal/models"
 	"example.com/go-migrator/internal/store"
+	models "example.com/go-migrator/internal/task"
 	"example.com/go-migrator/internal/worker"
 )
 

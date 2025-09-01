@@ -3,7 +3,7 @@ package store
 import (
 	"errors"
 
-	"example.com/go-migrator/internal/models"
+	models "example.com/go-migrator/internal/task"
 )
 
 var ErrNotFound = errors.New("task not found")

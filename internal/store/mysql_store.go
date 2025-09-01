@@ -7,7 +7,7 @@ import (
 	"sync"
 	"time"
 
-	"example.com/go-migrator/internal/models"
+	models "example.com/go-migrator/internal/task"
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/google/uuid"
 )
