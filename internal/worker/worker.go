@@ -69,8 +69,16 @@ func (w *Worker) process(id string) {
 	_ = w.store.UpdateTask(t)
 
 	// execute migration via orchestrator adapter
-	convID := t.Payload["conversation_id"]
-	err = migrator.MigrateTask(convID, t.Payload)
+	zoomUserID := t.Payload["zoom_user_id"]
+	zoomChannelID := t.Payload["zoom_channel_id"]
+	teamName := t.Payload["team_name"]
+	channelName := t.Payload["channel_name"]
+	// pass the store as an IdentityStore so migrator can resolve Zoom->Teams mappings
+	var idStore store.IdentityStore
+	if is, ok := w.store.(store.IdentityStore); ok {
+		idStore = is
+	}
+	err = migrator.MigrateTask(zoomUserID, zoomChannelID, teamName, channelName, idStore)
 	if err != nil {
 		log.Printf("task %s failed: %v", id, err)
 		t.Status = models.StatusFailed

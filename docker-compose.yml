@@ -17,10 +17,21 @@ services:
     build: .
     depends_on:
       - db
+      - rabbitmq
     environment:
       MYSQL_DSN: "migrator:migrator@tcp(db:3306)/migrations?parseTime=true"
+      RABBITMQ_URL: "amqp://guest:guest@rabbitmq:5672/"
     ports:
       - "8080:8080"
+
+  rabbitmq:
+    image: rabbitmq:3-management
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    environment:
+      RABBITMQ_DEFAULT_USER: guest
+      RABBITMQ_DEFAULT_PASS: guest
 
 volumes:
   db-data:

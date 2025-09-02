@@ -12,27 +12,34 @@ import (
 	"example.com/go-migrator/internal/queue"
 	"example.com/go-migrator/internal/store"
 	"example.com/go-migrator/internal/worker"
+	"github.com/joho/godotenv"
 )
 
 func main() {
+	// load .env into the process environment so os.Getenv works for all packages
+	if err := godotenv.Load(); err != nil {
+		log.Fatalf("failed to load .env file: %v", err)
+	}
+
+	get := func(key string) string { return os.Getenv(key) }
+
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
 
 	// persistent MySQL store required
-	dsn := os.Getenv("MYSQL_DSN")
+	dsn := get("MYSQL_DSN")
 	if dsn == "" {
-		log.Fatal("MYSQL_DSN is required")
+		log.Fatal("MYSQL_DSN is required in .env")
 	}
 	st, err := store.NewMySQLStore(dsn)
 	if err != nil {
 		log.Fatalf("failed to open mysql store: %v", err)
 	}
-	log.Println("using MySQL store")
 
 	// configure RabbitMQ
-	rabbitURL := os.Getenv("RABBITMQ_URL")
+	rabbitURL := get("RABBITMQ_URL")
 	if rabbitURL == "" {
-		rabbitURL = "amqp://guest:guest@localhost:5672/"
+		log.Fatal("RABBITMQ_URL is required in .env")
 	}
 	qclient, err := queue.NewRabbitClient(rabbitURL, "migrator-tasks")
 	if err != nil {
@@ -45,7 +52,12 @@ func main() {
 
 	h := api.NewHandler(st, qclient)
 	srv := &http.Server{
-		Addr:    ":8080",
+		Addr: ":" + func() string {
+			if p := get("PORT"); p != "" {
+				return p
+			}
+			return "8080"
+		}(),
 		Handler: h.Router(),
 	}
 

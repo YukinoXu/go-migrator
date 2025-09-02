@@ -47,7 +47,22 @@ func (s *MySQLStore) ensureSchema() error {
   created_at DATETIME NOT NULL,
   updated_at DATETIME NOT NULL
 );`
-	_, err := s.db.Exec(schema)
+	if _, err := s.db.Exec(schema); err != nil {
+		return err
+	}
+
+	// identities table for mapping Zoom users to Teams users
+	idSchema := `CREATE TABLE IF NOT EXISTS identities (
+	zoom_user_id VARCHAR(100) PRIMARY KEY,
+	zoom_user_email VARCHAR(255),
+	zoom_user_display_name VARCHAR(255),
+	teams_user_id VARCHAR(100),
+	teams_user_principal_name VARCHAR(255),
+	teams_user_display_name VARCHAR(255),
+	created_at DATETIME NOT NULL,
+	updated_at DATETIME NOT NULL
+);`
+	_, err := s.db.Exec(idSchema)
 	return err
 }
 
@@ -151,6 +166,48 @@ func (s *MySQLStore) ListTasks() ([]*models.Task, error) {
 		out = append(out, &t)
 	}
 	return out, nil
+}
+
+// CreateOrUpdateIdentity inserts or updates an identity row keyed by zoom_id.
+func (s *MySQLStore) CreateOrUpdateIdentity(i *Identity) error {
+	if i == nil {
+		return errors.New("nil identity")
+	}
+	now := time.Now().UTC()
+	// try update first
+	_, err := s.db.Exec(`UPDATE identities SET zoom_user_email=?, zoom_user_display_name=?, teams_user_id=?, teams_user_principal_name=?, teams_user_display_name=?, updated_at=? WHERE zoom_user_id = ?`,
+		i.ZoomUserEmail, i.ZoomUserDisplayName, i.TeamsUserID, i.TeamsUserPrincipalName, i.TeamsUserDisplayName, now, i.ZoomUserID)
+	if err != nil {
+		return err
+	}
+	// attempt insert if not exists
+	_, err = s.db.Exec(`INSERT INTO identities (zoom_user_id, zoom_user_email, zoom_user_display_name, teams_user_id, teams_user_principal_name, teams_user_display_name, created_at, updated_at) SELECT ?,?,?,?,?,?,?,? WHERE NOT EXISTS (SELECT 1 FROM identities WHERE zoom_user_id = ?)`,
+		i.ZoomUserID, i.ZoomUserEmail, i.ZoomUserDisplayName, i.TeamsUserID, i.TeamsUserPrincipalName, i.TeamsUserDisplayName, now, now, i.ZoomUserID)
+	return err
+}
+
+func scanIdentityRow(rows *sql.Row) (*Identity, error) {
+	var id Identity
+	var createdAt, updatedAt time.Time
+	if err := rows.Scan(&id.ZoomUserID, &id.ZoomUserEmail, &id.ZoomUserDisplayName, &id.TeamsUserID, &id.TeamsUserPrincipalName, &id.TeamsUserDisplayName, &createdAt, &updatedAt); err != nil {
+		if err == sql.ErrNoRows {
+			return nil, ErrNotFound
+		}
+		return nil, err
+	}
+	id.CreatedAt = createdAt.String()
+	id.UpdatedAt = updatedAt.String()
+	return &id, nil
+}
+
+func (s *MySQLStore) GetIdentityByZoomID(zoomID string) (*Identity, error) {
+	row := s.db.QueryRow(`SELECT zoom_user_id, zoom_user_email, zoom_user_display_name, teams_user_id, teams_user_principal_name, teams_user_display_name, created_at, updated_at FROM identities WHERE zoom_user_id = ?`, zoomID)
+	return scanIdentityRow(row)
+}
+
+func (s *MySQLStore) GetIdentityByTeamsID(teamsID string) (*Identity, error) {
+	row := s.db.QueryRow(`SELECT zoom_user_id, zoom_user_email, zoom_user_display_name, teams_user_id, teams_user_principal_name, teams_user_display_name, created_at, updated_at FROM identities WHERE teams_user_id = ?`, teamsID)
+	return scanIdentityRow(row)
 }
 
 // Enqueue and Queue removed; use external RabbitMQ client for queueing

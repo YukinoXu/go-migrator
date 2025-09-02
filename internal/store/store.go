@@ -16,5 +16,24 @@ type Store interface {
 	ListTasks() ([]*models.Task, error)
 }
 
+// Identity maps a Zoom user to a Teams user.
+type Identity struct {
+	ZoomUserID             string
+	ZoomUserEmail          string
+	ZoomUserDisplayName    string
+	TeamsUserID            string
+	TeamsUserPrincipalName string
+	TeamsUserDisplayName   string
+	CreatedAt              string
+	UpdatedAt              string
+}
+
+// Identity methods
+type IdentityStore interface {
+	CreateOrUpdateIdentity(i *Identity) error
+	GetIdentityByZoomUserID(zoomUserID string) (*Identity, error)
+	GetIdentityByTeamsUserID(teamsUserID string) (*Identity, error)
+}
+
 // The in-memory store has been removed. Use a persistent store (MySQL) and
 // RabbitMQ for queueing. The MySQL store implementation persists tasks.
