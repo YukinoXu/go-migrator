@@ -13,12 +13,14 @@ import (
 	"example.com/go-migrator/internal/model"
 )
 
+
+
 // GormStore implements Store using GORM and MySQL driver.
 type GormStore struct {
 	db *gorm.DB
 }
 
-type gormTask struct {
+type Task struct {
 	ID        string    `gorm:"primaryKey;size:36"`
 	Source    string    `gorm:"size:100;not null"`
 	Target    string    `gorm:"size:100;not null;index:idx_target"`
@@ -30,7 +32,7 @@ type gormTask struct {
 	UpdatedAt time.Time `gorm:"autoUpdateTime"`
 }
 
-type gormIdentity struct {
+type Identity struct {
 	ZoomUserID             string    `gorm:"primaryKey;size:100"`
 	ZoomUserEmail          string    `gorm:"size:255"`
 	ZoomUserDisplayName    string    `gorm:"size:255"`
@@ -71,14 +73,20 @@ func (s *GormStore) DB() *gorm.DB { return s.db }
 
 // RunMigrations runs AutoMigrate and ensures necessary indexes/constraints.
 func RunMigrations(db *gorm.DB) error {
-	if err := db.AutoMigrate(&gormTask{}, &gormIdentity{}); err != nil {
+	if err := db.AutoMigrate(&Task{}, &Identity{}); err != nil {
 		return err
 	}
-	// Ensure indexes that GORM tags may not create depending on dialect
-	if err := db.Exec("CREATE INDEX IF NOT EXISTS idx_tasks_status ON gorm_tasks (status)").Error; err != nil {
-		// ignore errors for dialects that don't support IF NOT EXISTS
+	// Ensure indexes using GORM migrator (cross-dialect safe)
+	mig := db.Migrator()
+	if has := mig.HasIndex(&Task{}, "Status"); !has {
+		_ = mig.CreateIndex(&Task{}, "Status")
 	}
-	if err := db.Exec("CREATE INDEX IF NOT EXISTS idx_tasks_target ON gorm_tasks (target)").Error; err != nil {
+	if has := mig.HasIndex(&Task{}, "Target"); !has {
+		_ = mig.CreateIndex(&Task{}, "Target")
+	}
+	// Ensure unique index on teams user id
+	if has := mig.HasIndex(&Identity{}, "TeamsUserID"); !has {
+		_ = mig.CreateIndex(&Identity{}, "TeamsUserID")
 	}
 	return nil
 }
@@ -97,7 +105,7 @@ func (s *GormStore) CreateTask(t *model.Task) (string, error) {
 		t.Status = model.StatusPending
 	}
 	payloadB, _ := json.Marshal(t.Payload)
-	gt := &gormTask{
+	gt := &Task{
 		ID:        t.ID,
 		Source:    t.Source,
 		Target:    t.Target,
@@ -115,7 +123,7 @@ func (s *GormStore) CreateTask(t *model.Task) (string, error) {
 }
 
 func (s *GormStore) GetTask(id string) (*model.Task, error) {
-	var gt gormTask
+	var gt Task
 	if err := s.db.First(&gt, "id = ?", id).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, ErrNotFound
@@ -154,14 +162,14 @@ func (s *GormStore) UpdateTask(t *model.Task) error {
 		"error":      t.Error,
 		"updated_at": t.UpdatedAt,
 	}
-	if err := s.db.Model(&gormTask{}).Where("id = ?", t.ID).Updates(updates).Error; err != nil {
+	if err := s.db.Model(&Task{}).Where("id = ?", t.ID).Updates(updates).Error; err != nil {
 		return err
 	}
 	return nil
 }
 
 func (s *GormStore) ListTasks() ([]*model.Task, error) {
-	var gts []gormTask
+	var gts []Task
 	if err := s.db.Find(&gts).Error; err != nil {
 		return nil, err
 	}
@@ -190,7 +198,7 @@ func (s *GormStore) CreateOrUpdateIdentity(i *model.Identity) error {
 	if i == nil {
 		return errors.New("nil identity")
 	}
-	gi := gormIdentity{
+	gi := Identity{
 		ZoomUserID:             i.ZoomUserID,
 		ZoomUserEmail:          i.ZoomUserEmail,
 		ZoomUserDisplayName:    i.ZoomUserDisplayName,
@@ -209,7 +217,7 @@ func (s *GormStore) CreateOrUpdateIdentity(i *model.Identity) error {
 }
 
 func (s *GormStore) GetIdentityByZoomUserID(zoomUserID string) (*model.Identity, error) {
-	var gi gormIdentity
+	var gi Identity
 	if err := s.db.First(&gi, "zoom_user_id = ?", zoomUserID).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, ErrNotFound
@@ -229,7 +237,7 @@ func (s *GormStore) GetIdentityByZoomUserID(zoomUserID string) (*model.Identity,
 }
 
 func (s *GormStore) GetIdentityByTeamsUserID(teamsUserID string) (*model.Identity, error) {
-	var gi gormIdentity
+	var gi Identity
 	if err := s.db.First(&gi, "teams_user_id = ?", teamsUserID).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, ErrNotFound
