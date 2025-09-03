@@ -5,7 +5,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
 	"time"
@@ -20,11 +22,43 @@ type Client struct {
 }
 
 func NewClientFromEnv() (*Client, error) {
-	tok := os.Getenv("GRAPH_TOKEN")
-	if tok == "" {
-		return nil, fmt.Errorf("GRAPH_TOKEN not set")
+	tenantID := os.Getenv("TEAMS_TENANT_ID")
+	clientID := os.Getenv("TEAMS_CLIENT_ID")
+	clientSecret := os.Getenv("TEAMS_CLIENT_SECRET")
+
+	tokenURL := fmt.Sprintf("https://login.microsoftonline.com/%s/oauth2/v2.0/token", tenantID)
+
+	data := url.Values{}
+	data.Set("grant_type", "client_credentials")
+	data.Set("client_id", clientID)
+	data.Set("client_secret", clientSecret)
+	data.Set("scope", "https://graph.microsoft.com/.default")
+
+	log.Printf("teams: requesting token POST %s", tokenURL)
+	resp, err := http.PostForm(tokenURL, data)
+	if err != nil {
+		return nil, err
 	}
-	return &Client{token: tok}, nil
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		bodyStr := string(body)
+		log.Printf("teams: token request failed %s: %s", resp.Status, bodyStr)
+		return nil, fmt.Errorf("failed to obtain token: %s", resp.Status)
+	}
+
+	var result map[string]interface{}
+	if err := json.Unmarshal(body, &result); err != nil {
+		return nil, err
+	}
+
+	log.Printf("teams: obtained token (len=%d)", len(result["access_token"].(string)))
+	return &Client{token: result["access_token"].(string)}, nil
 }
 
 func (c *Client) EnsureTeam(name string, t migmodel.TeamType) (string, error) {
@@ -50,6 +84,7 @@ func (c *Client) EnsureTeam(name string, t migmodel.TeamType) (string, error) {
 	req, _ := http.NewRequest("POST", url, bytes.NewReader(b))
 	req.Header.Set("Authorization", "Bearer "+c.token)
 	req.Header.Set("Content-Type", "application/json")
+	log.Printf("teams: POST %s (create team %q)", url, name)
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return "", err
@@ -68,6 +103,7 @@ func (c *Client) EnsureTeam(name string, t migmodel.TeamType) (string, error) {
 	// Accepted - creation is processed async. Poll the Location until it completes.
 	if resp.StatusCode == http.StatusAccepted {
 		loc := resp.Header.Get("Location")
+		log.Printf("teams: async create accepted, polling %s", loc)
 		if loc == "" {
 			return "", fmt.Errorf("graph returned 202 but no Location header")
 		}
@@ -82,6 +118,7 @@ func (c *Client) EnsureTeam(name string, t migmodel.TeamType) (string, error) {
 			case <-ticker.C:
 				reqOp, _ := http.NewRequest("GET", loc, nil)
 				reqOp.Header.Set("Authorization", "Bearer "+c.token)
+				log.Printf("teams: polling operation %s", loc)
 				respOp, err := http.DefaultClient.Do(reqOp)
 				if err != nil {
 					// continue polling on transient errors
@@ -93,6 +130,7 @@ func (c *Client) EnsureTeam(name string, t migmodel.TeamType) (string, error) {
 						// operation may include targetResourceId or resourceLocation or status
 						if tr, ok := op["targetResourceId"].(string); ok && tr != "" {
 							respOp.Body.Close()
+							log.Printf("teams: async create succeeded targetResourceId=%s", tr)
 							return tr, nil
 						}
 						statusRaw, _ := op["status"].(string)
@@ -107,14 +145,17 @@ func (c *Client) EnsureTeam(name string, t migmodel.TeamType) (string, error) {
 							if rid, ok := op["resourceLocation"].(string); ok && rid != "" {
 								parts := strings.Split(rid, "/")
 								respOp.Body.Close()
+								log.Printf("teams: async create succeeded resourceLocation=%s", rid)
 								return parts[len(parts)-1], nil
 							}
 							if loc2 := respOp.Header.Get("Location"); loc2 != "" {
 								parts := strings.Split(loc2, "/")
 								respOp.Body.Close()
+								log.Printf("teams: async create succeeded location=%s", loc2)
 								return parts[len(parts)-1], nil
 							}
 							respOp.Body.Close()
+							log.Printf("teams: async create completed with no id")
 							return "", nil
 						case "failed":
 							// surface operation error if available
@@ -125,12 +166,15 @@ func (c *Client) EnsureTeam(name string, t migmodel.TeamType) (string, error) {
 								}
 								if code, ok := errObj["code"].(string); ok {
 									respOp.Body.Close()
+									log.Printf("teams: async operation failed code=%s msg=%s", code, msg)
 									return "", fmt.Errorf("teams async operation failed: %s: %s", code, msg)
 								}
 								respOp.Body.Close()
+								log.Printf("teams: async operation failed msg=%s", msg)
 								return "", fmt.Errorf("teams async operation failed: %s", msg)
 							}
 							respOp.Body.Close()
+							log.Printf("teams: async operation failed")
 							return "", fmt.Errorf("teams async operation failed")
 						default:
 							// NotStarted, Running, UnknownFutureValue -> keep polling
@@ -144,6 +188,7 @@ func (c *Client) EnsureTeam(name string, t migmodel.TeamType) (string, error) {
 
 	// fallback: try to parse Location header if set
 	if loc := resp.Header.Get("Location"); loc != "" {
+		log.Printf("teams: create returned Location %s", loc)
 		parts := strings.Split(loc, "/")
 		return parts[len(parts)-1], nil
 	}
@@ -173,6 +218,7 @@ func (c *Client) EnsureChannel(teamID, name string, chType migmodel.ChannelType)
 	req, _ := http.NewRequest("POST", url, bytes.NewReader(b))
 	req.Header.Set("Authorization", "Bearer "+c.token)
 	req.Header.Set("Content-Type", "application/json")
+	log.Printf("teams: POST %s (create channel %q)", url, name)
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return "", err
@@ -180,6 +226,7 @@ func (c *Client) EnsureChannel(teamID, name string, chType migmodel.ChannelType)
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		body, _ := io.ReadAll(resp.Body)
+		log.Printf("teams: create channel failed %s: %s", resp.Status, string(body))
 		return "", fmt.Errorf("graph create channel error: %s: %s", resp.Status, string(body))
 	}
 	var out struct {
@@ -232,6 +279,7 @@ func (c *Client) PostMessage(teamID, channelID string, zm migmodel.ZoomMessage) 
 	req, _ := http.NewRequest("POST", url, bytes.NewReader(b))
 	req.Header.Set("Authorization", "Bearer "+c.token)
 	req.Header.Set("Content-Type", "application/json")
+	log.Printf("teams: POST %s (import message %s)", url, zm.ID)
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return err
@@ -241,6 +289,7 @@ func (c *Client) PostMessage(teamID, channelID string, zm migmodel.ZoomMessage) 
 	// The import API may return 200/201 or 202 depending on processing. Treat non-2xx as error.
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		body, _ := io.ReadAll(resp.Body)
+		log.Printf("teams: import message failed %s: %s", resp.Status, string(body))
 		return fmt.Errorf("graph import message error: %s: %s", resp.Status, string(body))
 	}
 	return nil

@@ -2,9 +2,11 @@ package zoom
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"os"
 
@@ -31,21 +33,30 @@ func NewClientFromEnv() (*Client, error) {
 
 	tokenURL := fmt.Sprintf("https://api.zoom.us/oauth/token?grant_type=account_credentials&account_id=%s", account_id)
 	ctx := context.Background()
-	req, _ := http.NewRequestWithContext(ctx, "GET", tokenURL, nil)
-	req.Header.Set("Authorization", "Basic "+fmt.Sprint(client_id+":"+client_secret))
+	req, _ := http.NewRequestWithContext(ctx, "POST", tokenURL, nil)
+	creds := base64.StdEncoding.EncodeToString([]byte(client_id + ":" + client_secret))
+	req.Header.Set("Authorization", "Basic "+creds)
 	req.Header.Set("Accept", "application/json")
+	log.Printf("zoom: requesting token POST %s", tokenURL)
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return nil, err
 	}
 	defer resp.Body.Close()
 
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode >= 400 {
+		log.Printf("zoom: token request failed %s: %s", resp.Status, string(body))
+		return nil, fmt.Errorf("zoom token request failed: %s: %s", resp.Status, string(body))
+	}
 	var respData struct {
 		AccessToken string `json:"access_token"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&respData); err != nil {
-		return nil, err
+	if err := json.Unmarshal(body, &respData); err != nil {
+		log.Printf("zoom: invalid token response: %v: %s", err, string(body))
+		return nil, fmt.Errorf("invalid token response: %v: %s", err, string(body))
 	}
+	log.Printf("zoom: obtained token (len=%d)", len(respData.AccessToken))
 
 	return &Client{token: respData.AccessToken}, nil
 }
@@ -120,6 +131,12 @@ func (c *Client) FetchMessages(userID string, channelID string) ([]migmodel.Zoom
 	var parsed migmodel.ZoomMessagesResponse
 	if err := json.NewDecoder(resp.Body).Decode(&parsed); err != nil {
 		return nil, err
+	}
+
+	log.Printf("zoom: fetched %d messages from channel %s", len(parsed.Messages), channelID)
+	// Log message content
+	for _, msg := range parsed.Messages {
+		log.Printf("zoom: message from %s: %s", msg.Sender, msg.Message)
 	}
 
 	return parsed.Messages, nil
