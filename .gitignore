@@ -36,4 +36,3 @@ pkg/
 
 # Docker
 docker-compose.override.yml
-**/docker/mysql-init/*

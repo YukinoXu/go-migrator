@@ -31,9 +31,14 @@ func main() {
 	if dsn == "" {
 		log.Fatal("MYSQL_DSN is required in .env")
 	}
-	st, err := store.NewMySQLStore(dsn)
+	// use GORM-backed store
+	st, err := store.NewGormStore(dsn)
 	if err != nil {
-		log.Fatalf("failed to open mysql store: %v", err)
+		log.Fatalf("failed to open gorm store: %v", err)
+	}
+	// ensure migrations have run (idempotent)
+	if err := store.RunMigrations(st.DB()); err != nil {
+		log.Fatalf("failed to run migrations: %v", err)
 	}
 
 	// configure RabbitMQ

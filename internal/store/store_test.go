@@ -152,7 +152,7 @@ func TestEndToEnd(t *testing.T) {
 	var st store.Store
 	dsn := os.Getenv("MYSQL_DSN")
 	if dsn != "" {
-		ms, err := store.NewMySQLStore(dsn)
+		ms, err := store.NewGormStore(dsn)
 		if err != nil {
 			t.Fatalf("failed to open mysql store: %v", err)
 		}

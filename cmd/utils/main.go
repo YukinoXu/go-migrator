@@ -21,7 +21,7 @@ func main() {
 
 	var idStore store.Store
 	if mysqlDSN != "" {
-		s, err := store.NewMySQLStore(mysqlDSN)
+		s, err := store.NewGormStore(mysqlDSN)
 		if err != nil {
 			log.Fatalf("failed to open mysql store: %v", err)
 		}
