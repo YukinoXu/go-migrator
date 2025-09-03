@@ -13,8 +13,6 @@ import (
 	"example.com/go-migrator/internal/model"
 )
 
-
-
 // GormStore implements Store using GORM and MySQL driver.
 type GormStore struct {
 	db *gorm.DB
@@ -71,23 +69,37 @@ func NewGormStoreFromDB(db *gorm.DB) (*GormStore, error) {
 // (for example, running migrations or raw queries).
 func (s *GormStore) DB() *gorm.DB { return s.db }
 
-// RunMigrations runs AutoMigrate and ensures necessary indexes/constraints.
 func RunMigrations(db *gorm.DB) error {
-	if err := db.AutoMigrate(&Task{}, &Identity{}); err != nil {
-		return err
-	}
-	// Ensure indexes using GORM migrator (cross-dialect safe)
 	mig := db.Migrator()
-	if has := mig.HasIndex(&Task{}, "Status"); !has {
-		_ = mig.CreateIndex(&Task{}, "Status")
+
+	if !mig.HasTable(&Task{}) {
+		if err := mig.CreateTable(&Task{}); err != nil {
+			return err
+		}
 	}
-	if has := mig.HasIndex(&Task{}, "Target"); !has {
-		_ = mig.CreateIndex(&Task{}, "Target")
+	if !mig.HasTable(&Identity{}) {
+		if err := mig.CreateTable(&Identity{}); err != nil {
+			return err
+		}
 	}
-	// Ensure unique index on teams user id
-	if has := mig.HasIndex(&Identity{}, "TeamsUserID"); !has {
-		_ = mig.CreateIndex(&Identity{}, "TeamsUserID")
+
+	if !mig.HasIndex(&Task{}, "idx_status") {
+		if err := mig.CreateIndex(&Task{}, "idx_status"); err != nil {
+			return err
+		}
 	}
+	if !mig.HasIndex(&Task{}, "idx_target") {
+		if err := mig.CreateIndex(&Task{}, "idx_target"); err != nil {
+			return err
+		}
+	}
+
+	if !mig.HasIndex(&Identity{}, "idx_teams_id") {
+		if err := mig.CreateIndex(&Identity{}, "idx_teams_id"); err != nil {
+			return err
+		}
+	}
+
 	return nil
 }
 
