@@ -7,7 +7,7 @@ import (
 	"sync"
 	"time"
 
-	models "example.com/go-migrator/internal/task"
+	"example.com/go-migrator/internal/model"
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/google/uuid"
 )
@@ -68,7 +68,7 @@ func (s *MySQLStore) ensureSchema() error {
 
 // enqueuePending removed; queueing is handled by RabbitMQ client
 
-func (s *MySQLStore) CreateTask(t *models.Task) (string, error) {
+func (s *MySQLStore) CreateTask(t *model.Task) (string, error) {
 	if t == nil {
 		return "", errors.New("nil task")
 	}
@@ -79,7 +79,7 @@ func (s *MySQLStore) CreateTask(t *models.Task) (string, error) {
 	t.CreatedAt = now
 	t.UpdatedAt = now
 	if t.Status == "" {
-		t.Status = models.StatusPending
+		t.Status = model.StatusPending
 	}
 	payloadB, _ := json.Marshal(t.Payload)
 	_, err := s.db.Exec(`INSERT INTO tasks (id, source, target, payload, status, result, error, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -91,10 +91,10 @@ func (s *MySQLStore) CreateTask(t *models.Task) (string, error) {
 	return t.ID, nil
 }
 
-func (s *MySQLStore) GetTask(id string) (*models.Task, error) {
+func (s *MySQLStore) GetTask(id string) (*model.Task, error) {
 	row := s.db.QueryRow(`SELECT id, source, target, payload, status, result, error, created_at, updated_at FROM tasks WHERE id = ?`, id)
 	var (
-		t        models.Task
+		t        model.Task
 		payloadS sql.NullString
 		result   sql.NullString
 		errStr   sql.NullString
@@ -120,7 +120,7 @@ func (s *MySQLStore) GetTask(id string) (*models.Task, error) {
 	return &t, nil
 }
 
-func (s *MySQLStore) UpdateTask(t *models.Task) error {
+func (s *MySQLStore) UpdateTask(t *model.Task) error {
 	if t == nil || t.ID == "" {
 		return errors.New("invalid task")
 	}
@@ -134,16 +134,16 @@ func (s *MySQLStore) UpdateTask(t *models.Task) error {
 	return nil
 }
 
-func (s *MySQLStore) ListTasks() ([]*models.Task, error) {
+func (s *MySQLStore) ListTasks() ([]*model.Task, error) {
 	rows, err := s.db.Query(`SELECT id, source, target, payload, status, result, error, created_at, updated_at FROM tasks`)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	out := []*models.Task{}
+	out := []*model.Task{}
 	for rows.Next() {
 		var (
-			t        models.Task
+			t        model.Task
 			payloadS sql.NullString
 			result   sql.NullString
 			errStr   sql.NullString
@@ -169,7 +169,7 @@ func (s *MySQLStore) ListTasks() ([]*models.Task, error) {
 }
 
 // CreateOrUpdateIdentity inserts or updates an identity row keyed by zoom_id.
-func (s *MySQLStore) CreateOrUpdateIdentity(i *Identity) error {
+func (s *MySQLStore) CreateOrUpdateIdentity(i *model.Identity) error {
 	if i == nil {
 		return errors.New("nil identity")
 	}
@@ -186,8 +186,8 @@ func (s *MySQLStore) CreateOrUpdateIdentity(i *Identity) error {
 	return err
 }
 
-func scanIdentityRow(rows *sql.Row) (*Identity, error) {
-	var id Identity
+func scanIdentityRow(rows *sql.Row) (*model.Identity, error) {
+	var id model.Identity
 	var createdAt, updatedAt time.Time
 	if err := rows.Scan(&id.ZoomUserID, &id.ZoomUserEmail, &id.ZoomUserDisplayName, &id.TeamsUserID, &id.TeamsUserPrincipalName, &id.TeamsUserDisplayName, &createdAt, &updatedAt); err != nil {
 		if err == sql.ErrNoRows {
@@ -200,14 +200,24 @@ func scanIdentityRow(rows *sql.Row) (*Identity, error) {
 	return &id, nil
 }
 
-func (s *MySQLStore) GetIdentityByZoomID(zoomID string) (*Identity, error) {
+func (s *MySQLStore) GetIdentityByZoomID(zoomID string) (*model.Identity, error) {
 	row := s.db.QueryRow(`SELECT zoom_user_id, zoom_user_email, zoom_user_display_name, teams_user_id, teams_user_principal_name, teams_user_display_name, created_at, updated_at FROM identities WHERE zoom_user_id = ?`, zoomID)
 	return scanIdentityRow(row)
 }
 
-func (s *MySQLStore) GetIdentityByTeamsID(teamsID string) (*Identity, error) {
+func (s *MySQLStore) GetIdentityByTeamsID(teamsID string) (*model.Identity, error) {
 	row := s.db.QueryRow(`SELECT zoom_user_id, zoom_user_email, zoom_user_display_name, teams_user_id, teams_user_principal_name, teams_user_display_name, created_at, updated_at FROM identities WHERE teams_user_id = ?`, teamsID)
 	return scanIdentityRow(row)
+}
+
+// Backwards-compatible wrappers implementing the method names declared on
+// the exported Store interface (GetIdentityByZoomUserID / GetIdentityByTeamsUserID).
+func (s *MySQLStore) GetIdentityByZoomUserID(zoomUserID string) (*model.Identity, error) {
+	return s.GetIdentityByZoomID(zoomUserID)
+}
+
+func (s *MySQLStore) GetIdentityByTeamsUserID(teamsUserID string) (*model.Identity, error) {
+	return s.GetIdentityByTeamsID(teamsUserID)
 }
 
 // Enqueue and Queue removed; use external RabbitMQ client for queueing

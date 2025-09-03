@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
+	"example.com/go-migrator/internal/model"
 	"example.com/go-migrator/internal/store"
-	models "example.com/go-migrator/internal/task"
 	"example.com/go-migrator/internal/worker"
 )
 
@@ -57,12 +57,13 @@ func (f *fakeQueue) Close() error { close(f.ch); return nil }
 // fakeStore is a simple in-test store implementation used when MYSQL_DSN is not set.
 type fakeStore struct {
 	mu    sync.RWMutex
-	tasks map[string]*models.Task
+	tasks map[string]*model.Task
+	ids   map[string]*model.Identity
 }
 
-func newFakeStore() *fakeStore { return &fakeStore{tasks: make(map[string]*models.Task)} }
+func newFakeStore() *fakeStore { return &fakeStore{tasks: make(map[string]*model.Task)} }
 
-func (s *fakeStore) CreateTask(t *models.Task) (string, error) {
+func (s *fakeStore) CreateTask(t *model.Task) (string, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if t.ID == "" {
@@ -72,13 +73,13 @@ func (s *fakeStore) CreateTask(t *models.Task) (string, error) {
 	t.CreatedAt = now
 	t.UpdatedAt = now
 	if t.Status == "" {
-		t.Status = models.StatusPending
+		t.Status = model.StatusPending
 	}
 	s.tasks[t.ID] = t
 	return t.ID, nil
 }
 
-func (s *fakeStore) GetTask(id string) (*models.Task, error) {
+func (s *fakeStore) GetTask(id string) (*model.Task, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	t, ok := s.tasks[id]
@@ -88,7 +89,7 @@ func (s *fakeStore) GetTask(id string) (*models.Task, error) {
 	return t, nil
 }
 
-func (s *fakeStore) UpdateTask(t *models.Task) error {
+func (s *fakeStore) UpdateTask(t *model.Task) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if _, ok := s.tasks[t.ID]; !ok {
@@ -99,14 +100,51 @@ func (s *fakeStore) UpdateTask(t *models.Task) error {
 	return nil
 }
 
-func (s *fakeStore) ListTasks() ([]*models.Task, error) {
+func (s *fakeStore) ListTasks() ([]*model.Task, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	out := make([]*models.Task, 0, len(s.tasks))
+	out := make([]*model.Task, 0, len(s.tasks))
 	for _, t := range s.tasks {
 		out = append(out, t)
 	}
 	return out, nil
+}
+
+// Identity methods to satisfy store.Store in tests
+func (s *fakeStore) CreateOrUpdateIdentity(i *model.Identity) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.ids == nil {
+		s.ids = make(map[string]*model.Identity)
+	}
+	s.ids[i.ZoomUserID] = i
+	return nil
+}
+
+func (s *fakeStore) GetIdentityByZoomUserID(zoomUserID string) (*model.Identity, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if s.ids == nil {
+		return nil, store.ErrNotFound
+	}
+	if v, ok := s.ids[zoomUserID]; ok {
+		return v, nil
+	}
+	return nil, store.ErrNotFound
+}
+
+func (s *fakeStore) GetIdentityByTeamsUserID(teamsUserID string) (*model.Identity, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if s.ids == nil {
+		return nil, store.ErrNotFound
+	}
+	for _, v := range s.ids {
+		if v != nil && v.TeamsUserID == teamsUserID {
+			return v, nil
+		}
+	}
+	return nil, store.ErrNotFound
 }
 
 func TestEndToEnd(t *testing.T) {
@@ -132,7 +170,7 @@ func TestEndToEnd(t *testing.T) {
 	wk.Start(ctx)
 
 	// create a task that should succeed
-	task := &models.Task{Source: "zoom", Target: "teams", Payload: map[string]string{"conversation_id": "room-1"}}
+	task := &model.Task{Source: "zoom", Target: "teams", Payload: map[string]string{"conversation_id": "room-1"}}
 	id, err := st.CreateTask(task)
 	if err != nil {
 		t.Fatalf("create task: %v", err)
@@ -147,7 +185,7 @@ func TestEndToEnd(t *testing.T) {
 	dead := time.Now().Add(5 * time.Second)
 	for time.Now().Before(dead) {
 		tk, _ := st.GetTask(id)
-		if tk.Status == models.StatusSuccess || tk.Status == models.StatusFailed {
+		if tk.Status == model.StatusSuccess || tk.Status == model.StatusFailed {
 			return
 		}
 		time.Sleep(20 * time.Millisecond)

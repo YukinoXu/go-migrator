@@ -16,11 +16,38 @@ type Client struct {
 }
 
 func NewClientFromEnv() (*Client, error) {
-	tok := os.Getenv("ZOOM_TOKEN")
-	if tok == "" {
-		return nil, fmt.Errorf("ZOOM_TOKEN not set")
+	account_id := os.Getenv("ZOOM_ACCOUNT_ID")
+	client_id := os.Getenv("ZOOM_CLIENT_ID")
+	client_secret := os.Getenv("ZOOM_CLIENT_SECRET")
+	if account_id == "" {
+		return nil, fmt.Errorf("ZOOM_ACCOUNT_ID not set")
 	}
-	return &Client{token: tok}, nil
+	if client_id == "" {
+		return nil, fmt.Errorf("ZOOM_CLIENT_ID not set")
+	}
+	if client_secret == "" {
+		return nil, fmt.Errorf("ZOOM_CLIENT_SECRET not set")
+	}
+
+	tokenURL := fmt.Sprintf("https://api.zoom.us/oauth/token?grant_type=account_credentials&account_id=%s", account_id)
+	ctx := context.Background()
+	req, _ := http.NewRequestWithContext(ctx, "GET", tokenURL, nil)
+	req.Header.Set("Authorization", "Basic "+fmt.Sprint(client_id+":"+client_secret))
+	req.Header.Set("Accept", "application/json")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	var respData struct {
+		AccessToken string `json:"access_token"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&respData); err != nil {
+		return nil, err
+	}
+
+	return &Client{token: respData.AccessToken}, nil
 }
 
 func (c *Client) GetUsers() ([]migmodel.ZoomUser, error) {

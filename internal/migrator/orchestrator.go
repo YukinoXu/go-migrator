@@ -3,30 +3,31 @@ package migrator
 import (
 	"fmt"
 
-	"example.com/go-migrator/internal/migrator/model"
+	migmodel "example.com/go-migrator/internal/migrator/model"
+	"example.com/go-migrator/internal/model"
 	"example.com/go-migrator/internal/store"
 )
 
 // Orchestrator runs a migration from source to destination.
 type Orchestrator struct {
-	Source model.SourceClient
-	Dest   model.DestinationClient
+	Source migmodel.SourceClient
+	Dest   migmodel.DestinationClient
 }
 
-func NewOrchestrator(s model.SourceClient, d model.DestinationClient) *Orchestrator {
+func NewOrchestrator(s migmodel.SourceClient, d migmodel.DestinationClient) *Orchestrator {
 	return &Orchestrator{Source: s, Dest: d}
 }
 
 // Run migrates messages from the conversation on source to a team/channel on destination.
-// It accepts an IdentityStore so it can resolve Zoom user IDs to Teams identities.
-func (o *Orchestrator) Run(zoomUserID, zoomChannelID, teamName, channelName string, teamType model.TeamType, channelType model.ChannelType, idStore store.IdentityStore) error {
+// It accepts the Store so it can resolve Zoom user IDs to Teams identities.
+func (o *Orchestrator) Run(zoomUserID, zoomChannelID, teamName, channelName string, teamType migmodel.TeamType, channelType migmodel.ChannelType, idStore store.Store) error {
 	msgs, err := o.Source.FetchMessages(zoomUserID, zoomChannelID)
 	if err != nil {
 		return fmt.Errorf("fetch messages: %w", err)
 	}
 
 	// attempt to resolve identity mapping for the zoom user
-	var identity *store.Identity
+	var identity *model.Identity
 	if idStore != nil {
 		if id, err := idStore.GetIdentityByZoomUserID(zoomUserID); err == nil {
 			identity = id

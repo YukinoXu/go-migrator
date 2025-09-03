@@ -7,9 +7,9 @@ import (
 	"time"
 
 	"example.com/go-migrator/internal/migrator"
+	"example.com/go-migrator/internal/model"
 	"example.com/go-migrator/internal/queue"
 	"example.com/go-migrator/internal/store"
-	models "example.com/go-migrator/internal/task"
 )
 
 type Worker struct {
@@ -65,7 +65,7 @@ func (w *Worker) process(id string) {
 		return
 	}
 
-	t.Status = models.StatusRunning
+	t.Status = model.StatusRunning
 	_ = w.store.UpdateTask(t)
 
 	// execute migration via orchestrator adapter
@@ -73,19 +73,15 @@ func (w *Worker) process(id string) {
 	zoomChannelID := t.Payload["zoom_channel_id"]
 	teamName := t.Payload["team_name"]
 	channelName := t.Payload["channel_name"]
-	// pass the store as an IdentityStore so migrator can resolve Zoom->Teams mappings
-	var idStore store.IdentityStore
-	if is, ok := w.store.(store.IdentityStore); ok {
-		idStore = is
-	}
-	err = migrator.MigrateTask(zoomUserID, zoomChannelID, teamName, channelName, idStore)
+	// pass the store directly; Store includes identity methods
+	err = migrator.MigrateTask(zoomUserID, zoomChannelID, teamName, channelName, w.store)
 	if err != nil {
 		log.Printf("task %s failed: %v", id, err)
-		t.Status = models.StatusFailed
+		t.Status = model.StatusFailed
 		t.Error = err.Error()
 	} else {
 		log.Printf("task %s succeeded", id)
-		t.Status = models.StatusSuccess
+		t.Status = model.StatusSuccess
 		t.Result = "migrated"
 	}
 	_ = w.store.UpdateTask(t)
