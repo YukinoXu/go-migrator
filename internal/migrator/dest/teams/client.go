@@ -103,6 +103,9 @@ func (c *Client) EnsureTeam(name string, t migmodel.TeamType) (string, error) {
 	// Accepted - creation is processed async. Poll the Location until it completes.
 	if resp.StatusCode == http.StatusAccepted {
 		loc := resp.Header.Get("Location")
+		if !strings.HasPrefix(loc, "http") {
+			loc = "https://graph.microsoft.com/v1.0" + loc
+		}
 		log.Printf("teams: async create accepted, polling %s", loc)
 		if loc == "" {
 			return "", fmt.Errorf("graph returned 202 but no Location header")
@@ -142,18 +145,6 @@ func (c *Client) EnsureTeam(name string, t migmodel.TeamType) (string, error) {
 								respOp.Body.Close()
 								return tr, nil
 							}
-							if rid, ok := op["resourceLocation"].(string); ok && rid != "" {
-								parts := strings.Split(rid, "/")
-								respOp.Body.Close()
-								log.Printf("teams: async create succeeded resourceLocation=%s", rid)
-								return parts[len(parts)-1], nil
-							}
-							if loc2 := respOp.Header.Get("Location"); loc2 != "" {
-								parts := strings.Split(loc2, "/")
-								respOp.Body.Close()
-								log.Printf("teams: async create succeeded location=%s", loc2)
-								return parts[len(parts)-1], nil
-							}
 							respOp.Body.Close()
 							log.Printf("teams: async create completed with no id")
 							return "", nil
@@ -177,7 +168,7 @@ func (c *Client) EnsureTeam(name string, t migmodel.TeamType) (string, error) {
 							log.Printf("teams: async operation failed")
 							return "", fmt.Errorf("teams async operation failed")
 						default:
-							// NotStarted, Running, UnknownFutureValue -> keep polling
+							// NotStarted, Running -> keep polling
 						}
 					}
 				}
