@@ -12,6 +12,22 @@ type ZoomChannel struct {
 	DisplayName string `json:"name"`
 }
 
+type ZoomChannelMember struct {
+	ID         string `json:"id"`
+	MemberID   string `json:"member_id"`
+	Email      string `json:"email"`
+	Name       string `json:"name"`
+	Role       string `json:"role"`
+	IsExternal bool   `json:"is_external"`
+}
+
+type ZoomChannelMembersResponse struct {
+	TotalRecords  int                 `json:"total_records"`
+	PageSize      int                 `json:"page_size"`
+	NextPageToken string              `json:"next_page_token"`
+	Members       []ZoomChannelMember `json:"members"`
+}
+
 // Zoom API models for the chat messages endpoint response. These mirror the
 // fields returned by Zoom so the JSON can be unmarshaled directly.
 type ZoomFile struct {
@@ -35,11 +51,10 @@ type ZoomMessage struct {
 	CustomEmoji       bool       `json:"custom_emoji"`
 	Files             []ZoomFile `json:"files,omitempty"`
 	// Zoom sometimes includes top-level file fields duplicated for convenience
-	FileID      string            `json:"file_id,omitempty"`
-	FileName    string            `json:"file_name,omitempty"`
-	FileSize    int64             `json:"file_size,omitempty"`
-	DownloadURL string            `json:"download_url,omitempty"`
-	Meta        map[string]string `json:"meta,omitempty"`
+	FileID      string `json:"file_id,omitempty"`
+	FileName    string `json:"file_name,omitempty"`
+	FileSize    int64  `json:"file_size,omitempty"`
+	DownloadURL string `json:"download_url,omitempty"`
 }
 
 type ZoomMessagesResponse struct {
@@ -128,16 +143,23 @@ type TeamsMessage struct {
 	MessageHistory       []interface{}         `json:"messageHistory,omitempty"`
 }
 
+type TeamsMessageRequest struct {
+	CreatedDateTime string     `json:"createdDateTime,omitempty"`
+	From            *TeamsFrom `json:"from,omitempty"`
+	Body            *TeamsBody `json:"body,omitempty"`
+}
+
 // SourceClient fetches messages from a provider (Zoom, Slack...)
 type SourceClient interface {
 	GetUsers() ([]ZoomUser, error)
 	GetUserChannels(userID string) ([]ZoomChannel, error)
 	FetchMessages(userID string, channelID string) ([]ZoomMessage, error)
+	FetchChannelMembers(userID string, channelID string) ([]ZoomChannelMember, error)
 }
 
 // DestinationClient posts messages and ensures destination resources.
 type DestinationClient interface {
 	EnsureTeam(name string, t TeamType) (teamID string, err error)
 	EnsureChannel(teamID, name string, c ChannelType) (channelID string, err error)
-	PostMessage(teamID, channelID string, m ZoomMessage) error
+	PostMessage(teamID, channelID string, m TeamsMessageRequest) error
 }

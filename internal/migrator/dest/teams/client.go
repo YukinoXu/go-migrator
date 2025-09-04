@@ -229,48 +229,13 @@ func (c *Client) EnsureChannel(teamID, name string, chType migmodel.ChannelType)
 	return out.ID, nil
 }
 
-func (c *Client) PostMessage(teamID, channelID string, zm migmodel.ZoomMessage) error {
-	// Use the import messages API to preserve original sender/timestamp where possible.
-	// Endpoint: POST /teams/{team-id}/channels/{channel-id}/messages/import
-	url := fmt.Sprintf("https://graph.microsoft.com/v1.0/teams/%s/channels/%s/messages/import", teamID, channelID)
-	// Build a minimal message import payload. We use "application" as the sender when
-	// we don't have an Azure AD user id. The API expects messageId and createdDateTime.
-	var createdDateTime string
-	if zm.DateTime != "" {
-		createdDateTime = zm.DateTime
-	} else if zm.Timestamp > 0 {
-		createdDateTime = time.Unix(0, zm.Timestamp*int64(time.Millisecond)).UTC().Format(time.RFC3339)
-	} else {
-		createdDateTime = defaultCreatedDateTime
-	}
+func (c *Client) PostMessage(teamID, channelID string, tm migmodel.TeamsMessageRequest) error {
+	url := fmt.Sprintf("https://graph.microsoft.com/v1.0/teams/%s/channels/%s/messages", teamID, channelID)
 
-	display := zm.SenderDisplayName
-	if display == "" && zm.Sender != "" {
-		display = zm.Sender
-	}
-
-	// The import API expects the message body; include sender displayName for readability.
-	msg := map[string]any{
-		"messageId":       zm.ID,
-		"createdDateTime": createdDateTime,
-		"body": map[string]any{
-			"contentType": "html",
-			"content":     fmt.Sprintf("%s: %s", display, zm.Message),
-		},
-		"from": map[string]any{
-			"application": map[string]any{
-				"id":          "importer",
-				"displayName": display,
-			},
-		},
-	}
-
-	payload := map[string]any{"messages": []any{msg}}
-	b, _ := json.Marshal(payload)
+	b, _ := json.Marshal(tm)
 	req, _ := http.NewRequest("POST", url, bytes.NewReader(b))
 	req.Header.Set("Authorization", "Bearer "+c.token)
 	req.Header.Set("Content-Type", "application/json")
-	log.Printf("teams: POST %s (import message %s)", url, zm.ID)
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return err

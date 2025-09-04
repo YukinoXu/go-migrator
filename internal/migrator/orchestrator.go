@@ -4,7 +4,7 @@ import (
 	"fmt"
 
 	migmodel "example.com/go-migrator/internal/migrator/model"
-	"example.com/go-migrator/internal/model"
+	"example.com/go-migrator/internal/migrator/translator"
 	"example.com/go-migrator/internal/store"
 )
 
@@ -26,12 +26,13 @@ func (o *Orchestrator) Run(zoomUserID, zoomChannelID, teamName, channelName stri
 		return fmt.Errorf("fetch messages: %w", err)
 	}
 
-	// attempt to resolve identity mapping for the zoom user
-	var identity *model.Identity
-	if idStore != nil {
-		if id, err := idStore.GetIdentityByZoomUserID(zoomUserID); err == nil {
-			identity = id
-		}
+	// Get zoom channel members
+	zmembers, err := o.Source.FetchChannelMembers(zoomUserID, zoomChannelID)
+
+	// Build memberID to userID map
+	memberIDToUserID := make(map[string]string)
+	for _, member := range zmembers {
+		memberIDToUserID[member.MemberID] = member.ID
 	}
 
 	teamID, err := o.Dest.EnsureTeam(teamName, teamType)
@@ -44,24 +45,16 @@ func (o *Orchestrator) Run(zoomUserID, zoomChannelID, teamName, channelName stri
 	}
 
 	for _, zm := range msgs {
-		// ensure meta map exists
-		if zm.Meta == nil {
-			zm.Meta = map[string]string{}
-		}
-		// attach identity mapping to message meta when available
-		if identity != nil {
-			if identity.TeamsUserID != "" {
-				zm.Meta["teams_user_id"] = identity.TeamsUserID
-			}
-			if identity.TeamsUserPrincipalName != "" {
-				zm.Meta["teams_user_principal_name"] = identity.TeamsUserPrincipalName
-			}
-			if identity.TeamsUserDisplayName != "" && zm.SenderDisplayName == "" {
-				zm.SenderDisplayName = identity.TeamsUserDisplayName
-			}
+		// Find Teams user ID and display name from identity mapping
+		zoomUserID := memberIDToUserID[zm.SendMemberID]
+		identity, err := idStore.GetIdentityByZoomUserID(zoomUserID)
+		if err != nil {
+			return fmt.Errorf("get identity by zoom user ID: %w", err)
 		}
 
-		if err := o.Dest.PostMessage(teamID, chID, zm); err != nil {
+		tm := translator.TranslateZoomToTeams(zm, identity.TeamsUserID, identity.TeamsUserDisplayName)
+
+		if err := o.Dest.PostMessage(teamID, chID, tm); err != nil {
 			return fmt.Errorf("post message: %w", err)
 		}
 	}

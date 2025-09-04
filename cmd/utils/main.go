@@ -36,10 +36,10 @@ func main() {
 		log.Fatal("ZOOM_TEST_USER_ID not set in env")
 	}
 	if teamName == "" {
-		teamName = "Go Migrator Team 1"
+		teamName = "Go Migrator Team 3"
 	}
 	if channelName == "" {
-		channelName = "Go Migrator Channel 1"
+		channelName = "Go Migrator Channel 3"
 	}
 
 	if err := migrator.MigrateTask(zoomUserID, zoomChannelID, teamName, channelName, idStore); err != nil {

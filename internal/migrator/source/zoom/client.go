@@ -141,3 +141,25 @@ func (c *Client) FetchMessages(userID string, channelID string) ([]migmodel.Zoom
 
 	return parsed.Messages, nil
 }
+
+func (c *Client) FetchChannelMembers(userID string, channelID string) ([]migmodel.ZoomChannelMember, error) {
+	ctx := context.Background()
+	url := fmt.Sprintf("https://api.zoom.us/v2/chat/users/%s/channels/%s/members", userID, channelID)
+	req, _ := http.NewRequestWithContext(ctx, "GET", url, nil)
+	req.Header.Set("Authorization", "Bearer "+c.token)
+	req.Header.Set("Accept", "application/json")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 400 {
+		b, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("zoom api error: %s: %s", resp.Status, string(b))
+	}
+	var parsed migmodel.ZoomChannelMembersResponse
+	if err := json.NewDecoder(resp.Body).Decode(&parsed); err != nil {
+		return nil, err
+	}
+	return parsed.Members, nil
+}
