@@ -1,6 +1,7 @@
 package main
 
 import (
+	"flag"
 	"log"
 	"os"
 
@@ -15,9 +16,11 @@ func main() {
 
 	zoomUserID := os.Getenv("ZOOM_TEST_USER_ID")
 	zoomChannelID := os.Getenv("ZOOM_TEST_CHANNEL_ID")
-	teamName := os.Getenv("TEST_TEAM_NAME")
-	channelName := os.Getenv("TEST_CHANNEL_NAME")
 	mysqlDSN := os.Getenv("MYSQL_DSN")
+
+	teamName := flag.String("teamName", "", "Teams team Name to migrate to")
+	channelName := flag.String("channelName", "", "Teams channel Name to migrate to")
+	flag.Parse()
 
 	var idStore store.Store
 	if mysqlDSN != "" {
@@ -35,14 +38,14 @@ func main() {
 	if zoomUserID == "" {
 		log.Fatal("ZOOM_TEST_USER_ID not set in env")
 	}
-	if teamName == "" {
-		teamName = "Go Migrator Team 3"
+	if *teamName == "" {
+		log.Fatal("-teamName is required")
 	}
-	if channelName == "" {
-		channelName = "Go Migrator Channel 3"
+	if *channelName == "" {
+		log.Fatal("-channelName is required")
 	}
 
-	if err := migrator.MigrateTask(zoomUserID, zoomChannelID, teamName, channelName, idStore); err != nil {
+	if err := migrator.MigrateTask(zoomUserID, zoomChannelID, *teamName, *channelName, idStore); err != nil {
 		log.Fatalf("migration failed: %v", err)
 	}
 	log.Println("migration finished")
