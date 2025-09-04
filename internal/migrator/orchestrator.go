@@ -6,6 +6,7 @@ import (
 	migmodel "example.com/go-migrator/internal/migrator/model"
 	"example.com/go-migrator/internal/migrator/translator"
 	"example.com/go-migrator/internal/store"
+	"github.com/google/uuid"
 )
 
 // Orchestrator runs a migration from source to destination.
@@ -28,6 +29,9 @@ func (o *Orchestrator) Run(zoomUserID, zoomChannelID, teamName, channelName stri
 
 	// Get zoom channel members
 	zmembers, err := o.Source.FetchChannelMembers(zoomUserID, zoomChannelID)
+	if err != nil {
+		return fmt.Errorf("fetch channel members: %w", err)
+	}
 
 	// Build memberID to userID map
 	memberIDToUserID := make(map[string]string)
@@ -47,12 +51,20 @@ func (o *Orchestrator) Run(zoomUserID, zoomChannelID, teamName, channelName stri
 	for _, zm := range msgs {
 		// Find Teams user ID and display name from identity mapping
 		zoomUserID := memberIDToUserID[zm.SendMemberID]
+		var teamUserID, teamUserDisplayName string
 		identity, err := idStore.GetIdentityByZoomUserID(zoomUserID)
+		if identity == nil {
+			teamUserID = uuid.New().String()
+			teamUserDisplayName = "Unknown User"
+		} else {
+			teamUserID = identity.TeamsUserID
+			teamUserDisplayName = identity.TeamsUserDisplayName
+		}
 		if err != nil {
-			return fmt.Errorf("get identity by zoom user ID: %w", err)
+			return fmt.Errorf("unable to get identity by zoom user ID: %w", err)
 		}
 
-		tm := translator.TranslateZoomToTeams(zm, identity.TeamsUserID, identity.TeamsUserDisplayName)
+		tm := translator.TranslateZoomToTeams(zm, teamUserID, teamUserDisplayName)
 
 		if err := o.Dest.PostMessage(teamID, chID, tm); err != nil {
 			return fmt.Errorf("post message: %w", err)
