@@ -250,3 +250,109 @@ func (c *Client) PostMessage(teamID, channelID string, tm migmodel.TeamsMessageR
 	}
 	return nil
 }
+
+func (c *Client) AddMemberToTeam(teamID, userID string, owner bool) error {
+	url := fmt.Sprintf("https://graph.microsoft.com/v1.0/teams/%s/members", teamID)
+
+	member := NewTeamsGraphMember(userID, owner)
+	b, _ := json.Marshal(member)
+	req, _ := http.NewRequest("POST", url, bytes.NewReader(b))
+	req.Header.Set("Authorization", "Bearer "+c.token)
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		body, _ := io.ReadAll(resp.Body)
+		log.Printf("teams: add member to team failed %s: %s", resp.Status, string(body))
+		return fmt.Errorf("graph add member to team error: %s: %s", resp.Status, string(body))
+	}
+	log.Printf("teams: added member %s to team %s", userID, teamID)
+	return nil
+}
+
+func (c *Client) CompleteMigrationChannel(teamID, channelID string) error {
+	url := fmt.Sprintf("https://graph.microsoft.com/v1.0/teams/%s/channels/%s/completeMigration", teamID, channelID)
+
+	req, _ := http.NewRequest("POST", url, nil)
+	req.Header.Set("Authorization", "Bearer "+c.token)
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		body, _ := io.ReadAll(resp.Body)
+		log.Printf("teams: complete migration channel failed %s: %s", resp.Status, string(body))
+		return fmt.Errorf("graph complete migration channel error: %s: %s", resp.Status, string(body))
+	}
+	log.Printf("teams: completed migration for channel %s in team %s", channelID, teamID)
+	return nil
+}
+
+func (c *Client) CompleteMigrationTeam(teamID string) error {
+	url := fmt.Sprintf("https://graph.microsoft.com/v1.0/teams/%s/completeMigration", teamID)
+
+	req, _ := http.NewRequest("POST", url, nil)
+	req.Header.Set("Authorization", "Bearer "+c.token)
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		body, _ := io.ReadAll(resp.Body)
+		log.Printf("teams: complete migration team failed %s: %s", resp.Status, string(body))
+		return fmt.Errorf("graph complete migration team error: %s: %s", resp.Status, string(body))
+	}
+	log.Printf("teams: completed migration for team %s", teamID)
+	return nil
+}
+
+func (c *Client) ListChannels(teamID string) ([]migmodel.TeamsChannel, error) {
+	url := fmt.Sprintf("https://graph.microsoft.com/v1.0/teams/%s/channels", teamID)
+
+	req, _ := http.NewRequest("GET", url, nil)
+	req.Header.Set("Authorization", "Bearer "+c.token)
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		body, _ := io.ReadAll(resp.Body)
+		log.Printf("teams: list channels failed %s: %s", resp.Status, string(body))
+		return nil, fmt.Errorf("graph list channels error: %s: %s", resp.Status, string(body))
+	}
+
+	var channelResponse migmodel.TeamsChannelListResponse
+	if err := json.NewDecoder(resp.Body).Decode(&channelResponse); err != nil {
+		return nil, fmt.Errorf("decode channels response: %w", err)
+	}
+
+	channels := channelResponse.Value
+	return channels, nil
+}
+
+func NewTeamsGraphMember(userID string, owner bool) *migmodel.TeamsGraphMember {
+	var roles []string
+	if owner {
+		roles = []string{"owner"}
+	} else {
+		roles = []string{}
+	}
+	return &migmodel.TeamsGraphMember{
+		ODataType:     "#microsoft.graph.aadUserConversationMember",
+		Roles:         roles,
+		UserODataBind: fmt.Sprintf("https://graph.microsoft.com/v1.0/users('%s')", userID),
+	}
+}

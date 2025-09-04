@@ -149,6 +149,21 @@ type TeamsMessageRequest struct {
 	Body            *TeamsBody `json:"body,omitempty"`
 }
 
+type TeamsGraphMember struct {
+	ODataType     string   `json:"@odata.type"`
+	Roles         []string `json:"roles"`
+	UserODataBind string   `json:"user@odata.bind"`
+}
+
+type TeamsChannel struct {
+	ID   string `json:"id"`
+	Name string `json:"displayName"`
+}
+
+type TeamsChannelListResponse struct {
+	Value []TeamsChannel `json:"value"`
+}
+
 // SourceClient fetches messages from a provider (Zoom, Slack...)
 type SourceClient interface {
 	GetUsers() ([]ZoomUser, error)

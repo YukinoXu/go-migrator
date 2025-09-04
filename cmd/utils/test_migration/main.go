@@ -47,5 +47,3 @@ func main() {
 	}
 	log.Println("migration finished")
 }
-
-// ...existing code...

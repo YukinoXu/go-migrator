@@ -2,6 +2,7 @@ package migrator
 
 import (
 	"fmt"
+	"log"
 
 	teamdest "example.com/go-migrator/internal/migrator/dest/teams"
 	zoomsrc "example.com/go-migrator/internal/migrator/source/zoom"
@@ -24,4 +25,30 @@ func MigrateTask(zoomUserID, zoomChannelID, teamName, channelName string, idStor
 	}
 	orchestrator := NewOrchestrator(src, dst)
 	return orchestrator.Run(zoomUserID, zoomChannelID, teamName, channelName, model.TeamPublic, model.ChannelStandard, idStore)
+}
+
+func CompleteMigration(teamID string) error {
+	dst, err := teamdest.NewClientFromEnv()
+	if err != nil {
+		return fmt.Errorf("teams client: %w", err)
+	}
+
+	// list channels
+	channels, err := dst.ListChannels(teamID)
+	if err != nil {
+		return fmt.Errorf("list channels: %w", err)
+	}
+	for _, channel := range channels {
+		log.Printf("teams: channel found %s: %s", channel.ID, channel.Name)
+		// complete migration for each channel
+		if err := dst.CompleteMigrationChannel(teamID, channel.ID); err != nil {
+			return fmt.Errorf("complete migration channel: %w", err)
+		}
+	}
+
+	// complete migration for team
+	if err := dst.CompleteMigrationTeam(teamID); err != nil {
+		return fmt.Errorf("complete migration team: %w", err)
+	}
+	return nil
 }
