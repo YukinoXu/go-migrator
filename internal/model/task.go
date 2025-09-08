@@ -12,13 +12,11 @@ const (
 )
 
 type Task struct {
-	ID        string            `json:"id"`
-	Source    string            `json:"source"`
-	Target    string            `json:"target"`
-	Payload   map[string]string `json:"payload"`
-	Status    TaskStatus        `json:"status"`
-	Result    string            `json:"result,omitempty"`
-	Error     string            `json:"error,omitempty"`
-	CreatedAt time.Time         `json:"created_at"`
-	UpdatedAt time.Time         `json:"updated_at"`
+	ID         string     `gorm:"primaryKey;size:36" json:"id"`
+	ProjectID  string     `gorm:"size:64;index:idx_task_project_status,priority:1" json:"project_id"`
+	SourcePath string     `gorm:"size:255;uniqueIndex:uq_task_source_path" json:"source_path"`
+	TargetPath string     `gorm:"size:255" json:"target_path"`
+	Status     TaskStatus `gorm:"size:20;index:idx_task_status;index:idx_task_project_status,priority:2" json:"status"`
+	CreatedAt  time.Time  `gorm:"index:idx_task_created_at" json:"created_at"`
+	UpdatedAt  time.Time  `json:"updated_at"`
 }
