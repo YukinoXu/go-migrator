@@ -21,7 +21,7 @@ func NewOrchestrator(s migmodel.SourceClient, d migmodel.DestinationClient) *Orc
 
 // Run migrates messages from the conversation on source to a team/channel on destination.
 // It accepts the Store so it can resolve Zoom user IDs to Teams identities.
-func (o *Orchestrator) Run(zoomUserID, zoomChannelID, teamName, channelName string, teamType migmodel.TeamType, channelType migmodel.ChannelType, idStore store.Store) error {
+func (o *Orchestrator) Run(zoomUserID, zoomChannelID, teamName, channelName string, teamType migmodel.TeamType, channelType migmodel.ChannelType, stm *store.StoreManager) error {
 	msgs, err := o.Source.FetchMessages(zoomUserID, zoomChannelID)
 	if err != nil {
 		return fmt.Errorf("fetch messages: %w", err)
@@ -52,7 +52,7 @@ func (o *Orchestrator) Run(zoomUserID, zoomChannelID, teamName, channelName stri
 		// Find Teams user ID and display name from identity mapping
 		zoomUserID := memberIDToUserID[zm.SendMemberID]
 		var teamUserID, teamUserDisplayName string
-		identity, err := idStore.GetIdentityByZoomUserID(zoomUserID)
+		identity, err := stm.Identity.GetByZoomID(zoomUserID)
 		if identity == nil {
 			teamUserID = uuid.New().String()
 			teamUserDisplayName = "Unknown User"

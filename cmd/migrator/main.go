@@ -9,10 +9,13 @@ import (
 	"time"
 
 	"example.com/go-migrator/internal/api"
+	"example.com/go-migrator/internal/model"
 	"example.com/go-migrator/internal/queue"
 	"example.com/go-migrator/internal/store"
 	"example.com/go-migrator/internal/worker"
 	"github.com/joho/godotenv"
+	"gorm.io/driver/mysql"
+	"gorm.io/gorm"
 )
 
 func main() {
@@ -31,15 +34,11 @@ func main() {
 	if dsn == "" {
 		log.Fatal("MYSQL_DSN is required in .env")
 	}
-	// use GORM-backed store
-	st, err := store.NewGormStore(dsn)
-	if err != nil {
-		log.Fatalf("failed to open gorm store: %v", err)
-	}
-	// ensure migrations have run (idempotent)
-	if err := store.RunMigrations(st.DB()); err != nil {
-		log.Fatalf("failed to run migrations: %v", err)
-	}
+
+	db, _ := gorm.Open(mysql.Open(dsn), &gorm.Config{})
+	db.AutoMigrate(&model.Task{}, &model.Identity{}, &model.Project{}, &model.Connector{})
+
+	stm := store.NewStoreManager(db)
 
 	// configure RabbitMQ
 	rabbitURL := get("RABBITMQ_URL")
@@ -52,10 +51,10 @@ func main() {
 	}
 	defer qclient.Close()
 
-	wk := worker.NewWorker(st, qclient, 4)
+	wk := worker.NewWorker(stm, qclient, 4)
 	wk.Start(ctx)
 
-	h := api.NewHandler(st, qclient)
+	h := api.NewHandler(stm, qclient)
 	srv := &http.Server{
 		Addr: ":" + func() string {
 			if p := get("PORT"); p != "" {

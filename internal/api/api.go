@@ -12,17 +12,17 @@ import (
 )
 
 type Handler struct {
-	store store.Store
-	q     queue.Client
-	mux   *gin.Engine
+	stm *store.StoreManager
+	q   queue.Client
+	mux *gin.Engine
 }
 
 // NewHandler creates an API handler. q may be nil; if provided, created task IDs
 // will be published to the queue.
-func NewHandler(s store.Store, q queue.Client) *Handler {
+func NewHandler(s *store.StoreManager, q queue.Client) *Handler {
 	r := gin.New()
 	r.Use(gin.Recovery())
-	h := &Handler{store: s, q: q, mux: r}
+	h := &Handler{stm: s, q: q, mux: r}
 	h.routes()
 	return h
 }
@@ -45,7 +45,7 @@ func (h *Handler) routes() {
 
 // identities handles POST to create/update and GET to list or query identities.
 func (h *Handler) identities(c *gin.Context) {
-	is := h.store
+	is := h.stm.Identity
 	if c.Request.Method == "POST" {
 		var in model.Identity
 		if err := c.BindJSON(&in); err != nil {
@@ -56,7 +56,7 @@ func (h *Handler) identities(c *gin.Context) {
 			c.String(400, "zoom_user_id required")
 			return
 		}
-		if err := is.CreateOrUpdateIdentity(&in); err != nil {
+		if err := is.Create(&in); err != nil {
 			log.Printf("identity store error: %v", err)
 			c.String(500, "internal")
 			return
@@ -70,7 +70,7 @@ func (h *Handler) identities(c *gin.Context) {
 
 // identityByKey supports GET /identities/zoom/{zoomUserID} and /identities/teams/{teamsUserID}
 func (h *Handler) identityByKey(c *gin.Context) {
-	is := h.store
+	is := h.stm.Identity
 	// route contains either zoom/:id or teams/:id
 	typ := ""
 	if strings.HasPrefix(c.FullPath(), "/identities/zoom/") {
@@ -88,9 +88,9 @@ func (h *Handler) identityByKey(c *gin.Context) {
 		err error
 	)
 	if typ == "zoom" {
-		res, err = is.GetIdentityByZoomUserID(id)
+		res, err = is.GetByZoomID(id)
 	} else if typ == "teams" {
-		res, err = is.GetIdentityByTeamsUserID(id)
+		res, err = is.GetByTeamsID(id)
 	} else {
 		c.String(400, "invalid identity type")
 		return
@@ -108,42 +108,40 @@ func (h *Handler) identityByKey(c *gin.Context) {
 }
 
 func (h *Handler) tasks(c *gin.Context) {
+	ts := h.stm.Task
 	if c.Request.Method == "POST" {
-		var in struct {
-			Source  string            `json:"source"`
-			Target  string            `json:"target"`
-			Payload map[string]string `json:"payload"`
-		}
+		var in model.Task
 		if err := c.BindJSON(&in); err != nil {
 			c.String(400, "invalid json")
 			return
 		}
-		t := &model.Task{Source: in.Source, Target: in.Target, Payload: in.Payload}
-		id, err := h.store.CreateTask(t)
-		if err != nil {
-			c.String(500, "create error")
+		if err := ts.Create(&in); err != nil {
+			log.Printf("task store error: %v", err)
+			c.String(500, "internal")
 			return
 		}
-		// publish to queue if available
-		if h.q != nil {
-			if err := h.q.Publish(c.Request.Context(), id); err != nil {
-				log.Printf("warning: failed to publish task %s to queue: %v", id, err)
-			}
-		}
-		c.JSON(202, gin.H{"id": id})
+		c.Status(204)
 		return
 	}
-	list, _ := h.store.ListTasks()
+	projectID := c.Param("projectId")
+	status := c.Param("status")
+	list, err := ts.ListByProject(projectID, status)
+	if err != nil {
+		log.Printf("task store error: %v", err)
+		c.String(500, "internal")
+		return
+	}
 	c.JSON(200, list)
 }
 
 func (h *Handler) taskByID(c *gin.Context) {
+	ts := h.stm.Task
 	id := c.Param("id")
 	if id == "" {
 		c.String(400, "missing id")
 		return
 	}
-	t, err := h.store.GetTask(id)
+	t, err := ts.GetByID(id)
 	if err != nil {
 		if err == store.ErrNotFound {
 			c.String(404, "not found")
